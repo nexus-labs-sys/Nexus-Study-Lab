@@ -40,6 +40,31 @@
     ║  Firebase bundle (compat — no lazy blob: loading):              ║
     ║    See existing firebase-bundle.js build process                ║
     ╚══════════════════════════════════════════════════════════════════╝
+
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║  EMAIL VERIFICATION + PASSWORD RESET — WHAT CHANGED              ║
+    ║                                                                  ║
+    ║  1. doRegister() now calls FB.sendEmailVerification() right     ║
+    ║     after account creation, then signs the user out and sends   ║
+    ║     them back to the Sign In tab with an instruction message.   ║
+    ║                                                                  ║
+    ║  2. doLogin() now checks cred.user.emailVerified. If false,     ║
+    ║     it immediately signs the user back out (no unverified       ║
+    ║     session is ever persisted) and shows a message with a       ║
+    ║     "Resend email" link.                                        ║
+    ║                                                                  ║
+    ║  3. onAuthStateChanged() has the same guard, so a stale/cached  ║
+    ║     unverified session can never slip through to streak.html.   ║
+    ║     Google/Discord-custom-token users are exempt from this      ║
+    ║     check (their providerId !== 'password').                    ║
+    ║                                                                  ║
+    ║  4. doForgotPassword() is unchanged in behavior, just with      ║
+    ║     tighter validation + the same friendlyError() mapping.      ║
+    ║                                                                  ║
+    ║  5. No custom action-handler page is used — Firebase's default  ║
+    ║     hosted page handles both the verify-email and reset-        ║
+    ║     password links. See chat reply for the exact Console steps. ║
+    ╚══════════════════════════════════════════════════════════════════╝
   -->
 
   <!-- Self-hosted fonts only — no Google Fonts CDN (blocked by Discord CSP) -->
@@ -310,6 +335,10 @@
     }
     .msg.error   { color: var(--error); }
     .msg.success { color: var(--success); }
+    .msg a, .msg button.msg-inline-btn {
+      color: var(--accent2); text-decoration: underline; cursor: pointer;
+      background: none; border: none; font: inherit; padding: 0;
+    }
 
     .spinner {
       display: inline-block; width: 12px; height: 12px;
@@ -969,6 +998,10 @@ if (!IS_DISCORD) {
   var auth = null;
   var FB   = null;
 
+  /* When true, onAuthStateChanged ignores sign-ins — used during
+     registration so it doesn't race with doRegister's own signOut(). */
+  var suppressAuthListener = false;
+
   if (window.FirebaseBundle) {
     FB = window.FirebaseBundle;
 console.log('FirebaseBundle:', FB);
@@ -988,6 +1021,7 @@ console.log('signInWithCustomToken:', typeof FB.signInWithCustomToken);
     /* Handle Google redirect result (popup-blocked fallback) */
     FB.getRedirectResult(auth).then(function(result) {
       if (result && result.user) {
+        /* Google accounts are auto-verified by Firebase — no check needed */
         saveUser(result.user);
         goTo('streak.html');
       }
@@ -995,9 +1029,23 @@ console.log('signInWithCustomToken:', typeof FB.signInWithCustomToken);
       if (err.code !== 'auth/no-auth-event') setMsg(friendlyError(err.code), 'error');
     });
 
-    /* Already signed in → skip login page */
+    /* Already signed in → skip login page (unless unverified email/password account) */
     FB.onAuthStateChanged(auth, function(user) {
-      if (user) { saveUser(user); goTo('streak.html'); }
+      if (suppressAuthListener) return;
+      if (!user) return;
+
+      var isPasswordAccount = user.providerData.length > 0 &&
+        user.providerData.some(function(p) { return p.providerId === 'password'; });
+
+      if (isPasswordAccount && !user.emailVerified) {
+        /* Never let an unverified password account reach the dashboard,
+           even if a stale session is cached on this device. */
+        FB.signOut(auth);
+        return;
+      }
+
+      saveUser(user);
+      goTo('streak.html');
     });
 
     /* Handle Discord OAuth callback (?code=... returned in URL) */
@@ -1026,6 +1074,15 @@ console.log('signInWithCustomToken:', typeof FB.signInWithCustomToken);
     el.textContent = text;
     el.className   = 'msg' + (type ? ' ' + type : '');
   }
+
+  /* setMsgHTML — same as setMsg but allows the inline "Resend email" button.
+     Only ever fed fixed strings + sanitize()'d email, never raw user input. */
+  function setMsgHTML(html, type) {
+    var el       = document.getElementById('msg');
+    el.innerHTML = html;
+    el.className = 'msg' + (type ? ' ' + type : '');
+  }
+
   function clearMsg() { setMsg('', ''); }
 
   function setLoading(on) {
@@ -1160,6 +1217,8 @@ console.log('signInWithCustomToken:', typeof FB.signInWithCustomToken);
       var firebaseToken = data.firebaseToken;
       var discordUser   = data.discordUser;
       var result        = await FB.signInWithCustomToken(auth, firebaseToken);
+      /* Custom-token (Discord) accounts skip the emailVerified check —
+         that flag only applies to the password sign-in provider. */
       saveUser(result.user, discordUser && discordUser.username);
       hideOverlay();
       goTo('streak.html');
@@ -1189,11 +1248,26 @@ console.log('signInWithCustomToken:', typeof FB.signInWithCustomToken);
 
   function doLogin(email, pass) {
     setLoading(true);
+    suppressAuthListener = true;
     FB.signInWithEmailAndPassword(auth, email, pass).then(function(cred) {
+
+      if (!cred.user.emailVerified) {
+        /* Never persist an unverified session — sign out immediately
+           and give the user a way to get a fresh verification email. */
+        FB.signOut(auth).then(function() {
+          suppressAuthListener = false;
+          setLoading(false);
+          showUnverifiedMessage(email);
+        });
+        return;
+      }
+
+      suppressAuthListener = false;
       saveUser(cred.user);
       setMsg('Welcome back ✶', 'success');
       setTimeout(function() { goTo('streak.html'); }, 500);
     }).catch(function(err) {
+      suppressAuthListener = false;
       setMsg(friendlyError(err.code), 'error');
       setLoading(false);
     });
@@ -1201,26 +1275,107 @@ console.log('signInWithCustomToken:', typeof FB.signInWithCustomToken);
 
   function doRegister(name, email, pass) {
     setLoading(true);
+    suppressAuthListener = true;
+
     FB.createUserWithEmailAndPassword(auth, email, pass).then(function(cred) {
-      return FB.updateProfile(cred.user, { displayName: name }).then(function() {
-        return cred.user;
+      var user = cred.user;
+
+      // Account exists now — from here on, never tell the user
+      // "something went wrong" without also explaining their
+      // account WAS created, since createUserWithEmailAndPassword
+      // already succeeded.
+      return FB.updateProfile(user, { displayName: name }).catch(function(err) {
+        console.warn('[NSL] updateProfile failed (non-fatal):', err);
+        // Don't block registration on a display-name failure.
+      }).then(function() {
+        return FB.sendEmailVerification(user).catch(function(err) {
+          console.warn('[NSL] sendEmailVerification failed:', err);
+          // Re-throw with a marker so the outer catch can give a
+          // more accurate message instead of a generic failure.
+          err._nslAccountCreated = true;
+          err._nslStage = 'verification-email';
+          throw err;
+        });
+      }).then(function() {
+        return FB.signOut(auth);
       });
-    }).then(function(user) {
-      saveUser(user, name);
-      setMsg('Account created ✶', 'success');
-      setTimeout(function() { goTo('streak.html'); }, 500);
-    }).catch(function(err) {
-      setMsg(friendlyError(err.code), 'error');
+    }).then(function() {
+      suppressAuthListener = false;
       setLoading(false);
+      setMsgHTML(
+        'Account created — check <strong>' + sanitize(email) + '</strong> for a verification link, then sign in.',
+        'success'
+      );
+      switchTab('login');
+      document.getElementById('login-email').value = email;
+    }).catch(function(err) {
+      suppressAuthListener = false;
+      setLoading(false);
+
+      if (err && err._nslAccountCreated) {
+        // Account exists but the verification email didn't go out.
+        // Sign out (best effort) and let them resend from the login tab.
+        FB.signOut(auth).catch(function() {});
+        setMsgHTML(
+          'Account created, but the verification email failed to send. ' +
+          'Switch to Sign In and use "Resend verification email" after entering your password.',
+          'error'
+        );
+        switchTab('login');
+        document.getElementById('login-email').value = email;
+        return;
+      }
+
+      // createUserWithEmailAndPassword itself failed — no account exists.
+      setMsg(friendlyError(err.code), 'error');
+    });
+  }
+
+  /* Shown after a login attempt with an unverified email/password account. */
+  function showUnverifiedMessage(email) {
+    setMsgHTML(
+      'Please verify <strong>' + sanitize(email) + '</strong> before signing in. ' +
+      '<button type="button" class="msg-inline-btn" id="resend-verify-btn">Resend verification email</button>',
+      'error'
+    );
+    var btn = document.getElementById('resend-verify-btn');
+    if (btn) {
+      btn.addEventListener('click', function() {
+        var pass = document.getElementById('login-password').value;
+        resendVerification(email, pass);
+      });
+    }
+  }
+
+  /* Resends the verification email. Firebase only allows sending it to a
+     currently-signed-in user, so this briefly signs back in, sends it,
+     then signs back out — the user never reaches the dashboard. */
+  function resendVerification(email, pass) {
+    if (!pass) {
+      setMsg('Enter your password above, then tap "Resend verification email" again.', 'error');
+      return;
+    }
+    suppressAuthListener = true;
+    FB.signInWithEmailAndPassword(auth, email, pass).then(function(cred) {
+      return FB.sendEmailVerification(cred.user).then(function() {
+        return FB.signOut(auth);
+      });
+    }).then(function() {
+      suppressAuthListener = false;
+      setMsg('Verification email resent — check your inbox (and spam folder).', 'success');
+    }).catch(function(err) {
+      suppressAuthListener = false;
+      setMsg(friendlyError(err.code), 'error');
     });
   }
 
   function doForgotPassword() {
     if (!auth || !FB) return;
     var email = document.getElementById('login-email').value.trim();
-    if (!email) { setMsg('Enter your email address above first.', 'error'); return; }
+    if (!email)               { setMsg('Enter your email address above first.', 'error'); return; }
+    if (!email.includes('@')) { setMsg('Enter a valid email address.', 'error'); return; }
     FB.sendPasswordResetEmail(auth, email).then(function() {
-      setMsg('Reset email sent — check your inbox.', 'success');
+      setMsg('Reset email sent — check your inbox (and spam folder).', 'success');
     }).catch(function(err) {
       setMsg(friendlyError(err.code), 'error');
     });

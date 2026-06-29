@@ -1,4 +1,4 @@
-import { initializeApp } from "firebase/app";
+import { initializeApp } from 'firebase/app';
 
 import {
   getAuth,
@@ -9,39 +9,39 @@ import {
   signInWithRedirect,
   getRedirectResult,
   sendPasswordResetEmail,
-  signInWithCustomToken,
-  GoogleAuthProvider,
-  updateProfile,
-  signOut
-} from "firebase/auth";
-
-import {
-  getFirestore,
-  doc,
-  getDoc,
-  setDoc,
-  deleteDoc
-} from "firebase/firestore";
-
-window.FirebaseBundle = {
-  initializeApp,
-
-  getAuth,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
-  sendPasswordResetEmail,
+  sendEmailVerification,
   signInWithCustomToken,
   GoogleAuthProvider,
   updateProfile,
   signOut,
+} from 'firebase/auth';
 
+import {
   getFirestore,
   doc,
   getDoc,
   setDoc,
-  deleteDoc
+  deleteDoc,
+} from 'firebase/firestore';
+
+window.FirebaseBundle = {
+  initializeApp,
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  signInWithCustomToken,
+  GoogleAuthProvider,
+  updateProfile,
+  signOut,
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  deleteDoc,
 };
