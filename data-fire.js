@@ -980,11 +980,10 @@ function applyUserGreeting() {
     });
   } catch (_) { }
 }
-
 function openFocusApp() {
   document.body.style.transition = 'opacity 0.5s ease';
   document.body.style.opacity = '0';
-  setTimeout(() => { window.location.href = 'index.html'; }, 520);
+  setTimeout(() => { window.location.href = nslPreserveDiscordParams('index.html'); }, 520);
 }
 
 /* ─────────────────────────────────────────────────────────────

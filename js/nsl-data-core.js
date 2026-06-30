@@ -23,7 +23,18 @@ if (IS_DISCORD && window.DiscordSDKLib && window.DiscordSDKLib.patchUrlMappings)
     ], { patchFetch: true, patchXhr: true, patchWebSocket: false, patchSrcAttributes: false });
   } catch (e) { console.warn('[NSL] patchUrlMappings failed:', e); }
 }
+/* ---- DISCORD PARAM PRESERVATION ---- */
+const NSL_BOOT_PARAMS = new URLSearchParams(window.location.search);
+const NSL_FRAME_ID = NSL_BOOT_PARAMS.get('frame_id') || NSL_BOOT_PARAMS.get('instance_id') || null;
 
+function nslPreserveDiscordParams(targetUrl) {
+  if (!NSL_FRAME_ID) return targetUrl;
+  const sep = targetUrl.includes('?') ? '&' : '?';
+  return targetUrl + sep + 'frame_id=' + encodeURIComponent(NSL_FRAME_ID);
+}
+
+window.nslPreserveDiscordParams = nslPreserveDiscordParams;
+window.NSL_FRAME_ID = NSL_FRAME_ID;
 /* ---- CONSTANTS ---- */
 const NSL_LEGACY_KEY = 'nsl_data';
 const NSL_KEY_PREFIX = 'nsl_data_';
@@ -267,7 +278,7 @@ async function nslSyncFromFirestore() {
       } else {
         const cached = JSON.parse(localStorage.getItem('nsl_user') || 'null');
         if (!cached) {
-          window.location.href = 'login.html' + window.location.search;
+          window.location.href = nslPreserveDiscordParams('login.html');
           return;
         }
         _uid = null;
@@ -287,7 +298,7 @@ function handleLogout() {
     localStorage.removeItem(NSL_UID_KEY);
     document.body.style.transition = 'opacity 0.5s ease';
     document.body.style.opacity = '0';
-    setTimeout(() => { window.location.href = 'login.html' + params; }, 520);
+    setTimeout(() => { window.location.href = nslPreserveDiscordParams('login.html'); }, 520);
   };
   if (window._nslSignOut) window._nslSignOut().then(doRedirect).catch(doRedirect);
   else doRedirect();
