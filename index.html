@@ -490,10 +490,10 @@
   ──────────────────────────────────────────────────────────────── -->
   <div id="normal-login" style="display:none; flex-direction:column; align-items:center; width:100%; max-width:420px;">
 
-    <button class="back-btn" id="back-btn" type="button" aria-label="Back to dashboard">
+    <!-- <button class="back-btn" id="back-btn" type="button" aria-label="Back to dashboard">
       <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
       Back to Lab
-    </button>
+    </button> -->
 
     <div class="card">
       <div class="brand">
@@ -688,12 +688,14 @@ if (IS_DISCORD) {
     const DiscordSDK =
       window.DiscordSDKLib.DiscordSDK;
 
-    const patchUrlMappings = window.DiscordSDKLib.patchUrlMappings;
+const patchUrlMappings = window.DiscordSDKLib.patchUrlMappings;
 try {
   if (typeof patchUrlMappings === "function") {
     patchUrlMappings([
       { prefix: "/worker", target: "green-thunder-d974.priyan-node.workers.dev" },
-    ]);
+      { prefix: "/firebase-auth", target: "identitytoolkit.googleapis.com" },
+      { prefix: "/firebase-token", target: "securetoken.googleapis.com" },
+    ], { patchFetch: true, patchXhr: true, patchWebSocket: false, patchSrcAttributes: false });
   }
 } catch (err) {
   console.warn("[NSL] URL mapping warning:", err);
@@ -1091,6 +1093,28 @@ function goTo(url) {
     };
     return map[code] || 'Something went wrong. Please try again.';
   }
+const NSL_BOOT_PARAMS = new URLSearchParams(window.location.search);
+const NSL_FRAME_ID = NSL_BOOT_PARAMS.get('frame_id') || null;
+const NSL_INSTANCE_ID = NSL_BOOT_PARAMS.get('instance_id') || NSL_FRAME_ID || null;
+
+function nslPreserveDiscordParams(targetUrl) {
+  if (!NSL_FRAME_ID && !NSL_INSTANCE_ID) return targetUrl;
+  const sep = targetUrl.includes('?') ? '&' : '?';
+  const parts = [];
+  if (NSL_FRAME_ID) parts.push('frame_id=' + encodeURIComponent(NSL_FRAME_ID));
+  if (NSL_INSTANCE_ID) parts.push('instance_id=' + encodeURIComponent(NSL_INSTANCE_ID));
+  return targetUrl + sep + parts.join('&');
+}
+
+window.nslPreserveDiscordParams = nslPreserveDiscordParams;
+window.NSL_FRAME_ID = NSL_FRAME_ID;
+window.NSL_INSTANCE_ID = NSL_INSTANCE_ID;
+/* ---- CONSTANTS ---- */
+const NSL_LEGACY_KEY = 'nsl_data';
+const NSL_KEY_PREFIX = 'nsl_data_';
+const NSL_TIMER_KEY = 'nsl_timer_state';
+const NSL_UID_KEY = 'nsl_active_uid';
+const NSL_FIRESTORE_DEBOUNCE_MS = 1500;
 
   /* ── Tab switching ── */
   var currentTab = 'login';
@@ -1365,7 +1389,7 @@ function goTo(url) {
   document.getElementById('main-btn').addEventListener('click',         handleEmailSubmit);
   document.getElementById('guest-btn').addEventListener('click',        enterAsGuest);
   document.getElementById('forgot-btn').addEventListener('click',       doForgotPassword);
-  document.getElementById('back-btn').addEventListener('click',         function() { goTo('streak.html'); });
+  document.getElementById('back-btn').addEventListener('click',         function() { goTo('app.html'); });
   document.getElementById('tab-login').addEventListener('click',        function() { switchTab('login'); });
   document.getElementById('tab-register').addEventListener('click',     function() { switchTab('register'); });
   document.getElementById('reg-name').addEventListener('keydown',       function(e) { if (e.key === 'Enter') document.getElementById('login-email').focus(); });
