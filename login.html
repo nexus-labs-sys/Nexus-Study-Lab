@@ -732,23 +732,24 @@ async function runDiscordAuth(DiscordSDK) {
   );
 
   
-  const sdk = new DiscordSDK(DISCORD_APP_ID, { instanceId: DISCORD_INSTANCE_ID });
+let sdk;
+try {
+  sdk = new DiscordSDK(DISCORD_APP_ID, { instanceId: DISCORD_INSTANCE_ID });
+  console.log("[NSL] sdk created with instanceId:", DISCORD_INSTANCE_ID);
+} catch (ctorErr) {
+  console.error("[NSL] DiscordSDK constructor threw:", ctorErr);
+  setGateError("SDK init failed: " + String(ctorErr.message || ctorErr));
+  const retryBtn = document.getElementById("btn-retry");
+  if (retryBtn) {
+    retryBtn.classList.add("visible");
+    retryBtn.onclick = () => { retryBtn.classList.remove("visible"); runDiscordAuth(DiscordSDK); };
+  }
+  return;
+}
 
-console.log(
-  "[NSL] sdk created WITHOUT instanceId"
-);
-
-  console.log(
-    "[NSL] sdk created with instanceId:",
-    DISCORD_INSTANCE_ID
-  );
-
-  try {
-
-    setGateStatus(
-      "Connecting to Discord..."
-    );
-
+try {
+  setGateStatus("Connecting to Discord...");
+  
     console.log(
       "[NSL] before sdk.ready()"
     );
