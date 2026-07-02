@@ -30,11 +30,10 @@ const NSL_INSTANCE_ID = NSL_BOOT_PARAMS.get('instance_id') || NSL_FRAME_ID || nu
 
 function nslPreserveDiscordParams(targetUrl) {
   if (!NSL_FRAME_ID && !NSL_INSTANCE_ID) return targetUrl;
+  const qs = window.location.search;
+  if (!qs) return targetUrl;
   const sep = targetUrl.includes('?') ? '&' : '?';
-  const parts = [];
-  if (NSL_FRAME_ID) parts.push('frame_id=' + encodeURIComponent(NSL_FRAME_ID));
-  if (NSL_INSTANCE_ID) parts.push('instance_id=' + encodeURIComponent(NSL_INSTANCE_ID));
-  return targetUrl + sep + parts.join('&');
+  return targetUrl + sep + qs.slice(1);
 }
 
 window.nslPreserveDiscordParams = nslPreserveDiscordParams;
